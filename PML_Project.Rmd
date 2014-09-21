@@ -1,0 +1,100 @@
+---
+title: "Practical Machine Learning Project"
+author: "Amar Kumar"
+date: "Monday, September 15, 2014"
+output: html_document
+---
+### Goals: 
+This project is to predict the manner in which the subjects did the exercise.
+
+### Introduction: 
+We will use the weight lifting dataset (source: http://groupware.les.inf.puc-rio.br/har) to investigate "how (well)" an activity was performed by the wearer. The dataset contains various predictors data collected through various sensors while doing Weight Lifting Exercises. 
+The classe outcome in the traing data set can be used as an outcome of all other predictor variables.
+
+### Overview
+I started with random forest algorithm thinking that I would change the algorithm in case the accuracy rate is not acceptable. However, fortunately or unfortunately,  the random forest algorithm provide me excellent prediction and I need not test any other model for this project. 
+My intial choice for random forest was due to the following reasons:
+* Random forests does not overfit. 
+* One can run as many trees as he wants. 
+* It is fast. 
+
+
+### Download and read the data
+```{r, cache=TRUE, warning=FALSE, message=FALSE}
+library(caret);library(randomForest);library(rattle)
+setwd("C:/Amar/4R/Machine Learning")
+file1<-"pml-training.csv"
+file2<-"pml-testing.csv"
+if ( !file.exists(file1) ) {
+    fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"  
+    download.file(fileUrl, destfile = "pml-training.csv")
+}
+
+if ( !file.exists(file2) ) {
+    fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"  
+    download.file(fileUrl, destfile = "pml-testing.csv")
+}
+trainH<-read.csv("pml-training.csv")[,-c(1,2,3,4,6)]
+testHQ<-read.csv("pml-testing.csv")[,-c(1,2,3,4,6)]
+```
+
+### Cleaning the Data
+* I have removed the irrelevant columns such as serial number, user name, raw_timestamp_part_1 and raw_timestamp_part_2 while reading the data itself.
+* When we observe the summary of the test data, we find few columns have many "NA" and "#DIV/0!" values. We have to get rid of these junk columns. 
+* The time stamp is in factor format. Hence we have converted the time stamp to class- "POSIXlt" "POSIXt".
+* I am also removing the new_window predictor, as it did not contribute much in the model ( as per the output of Variable importance of the model) and was creating problem in prediction due to drop of a level in the test data.
+
+```{r, cache=TRUE, warning=FALSE, message=FALSE}
+#removing #NA and #Div/0! from training set
+
+o<-apply(trainH,2,function(x){sum(is.na(x))})
+trainH1<-trainH[,o==0]
+p<-apply(trainH1,2,function(x){sum(x=="#DIV/0!")})
+trainH2<-trainH1[,is.na(p)|!(p>0)]
+trainH2$cvtd_timestamp<-as.POSIXct(strptime(trainH2$cvtd_timestamp, "%d/%m/%Y  %H:%M"))
+
+#removing #NA and #Div/0! from test set
+
+o<-apply(testHQ,2,function(x){sum(is.na(x))})
+testHQ1<-testHQ[,o==0]
+p<-apply(testHQ1,2,function(x){sum(x=="#DIV/0!")})
+testHQ2<-testHQ1[,is.na(p)|!(p>0)]
+testHQ2$cvtd_timestamp<-as.POSIXct(strptime(testHQ2$cvtd_timestamp, "%d/%m/%Y  %H:%M"))
+
+# Test data set has magnet_forearm_y and magnet_forearm_z "num" type values. However the same variables are of "int" type in the training data set.
+testHQ2$magnet_forearm_y<-as.numeric(testHQ2$magnet_forearm_y)
+testHQ2$magnet_forearm_z<-as.numeric(testHQ2$magnet_forearm_z)
+testHQ2$magnet_dumbbell_z <-as.numeric(testHQ2$magnet_dumbbell_z)
+```
+
+### Cross Validation and Modelling
+I have split the traing set into training/testing sets to validate the model built. The traing set will be used to cross-validate the derived model. 
+
+```{r, cache=TRUE, warning=FALSE, message=FALSE}
+set.seed(123)
+inTrain<-createDataPartition(trainH2$classe, p=0.7, list=F)
+trainHF<-trainH2[inTrain,];testHF<-trainH2[-inTrain,]
+modFit<-randomForest(classe~.,data=trainHF, ntree=60, replace=F, importance=T)
+modFit
+```
+
+### Analysis of the model 
+The expected out of sample error is 0.34% (given by "OOB estimate of  error rate")
+```{r, cache=TRUE, warning=FALSE, message=FALSE}
+plot(modFit)
+pre<-predict(modFit, testHF[,-55])
+table(testHF[,55], pre)
+# varImp(modFit)
+varImpPlot(modFit)
+```
+
+* Error does not decrease beyond the number of trees =30.
+* Validation test data provides a significant accurate result.
+* Timestamp, yaw_belt, num_window and roll belt are top four predictors for the outcome classe.
+
+### Prediction of the  20 test cases
+```{r}
+pre1<-predict(modFit, testHQ2[,-55])
+```
+
+I got the 100% correct prediction of the given 20 test cases.
